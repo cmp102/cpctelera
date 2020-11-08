@@ -36,6 +36,19 @@
 #$(eval $(call AKS2DATA, CONVERT      , music.aks , array , mem_address ))
 
 
+##
+## Arkos tracker 2 macros
+##
+
+#$(eval $(call AKS2_SET_FOLDER, src/))
+#$(eval $(call AKS2_ADD_CBINDINGS))                      << Uncomment if you want use C functions>>
+#$(eval $(call AKS2_MANAGE_SFX))                         << Uncomment if you want sfx >>
+#$(eval $(call AKS2_CONVERT_SONG, assets/myAwesomeMusic.aks, myAwesomeMusic, 1))
+#$(eval $(call AKS2_CONVERT_SFX, assets/myAwesomeSFX.aks, myAwesomeSFX))
+#$(eval $(call AKS2_GEN_PLAYER))
+
+
+
 
 ##
 ## OLD MACROS (For compatibility)

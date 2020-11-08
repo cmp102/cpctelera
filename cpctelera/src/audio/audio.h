@@ -89,4 +89,19 @@ extern volatile  u8 cpct_akp_songLoopTimes;
 #define AY_CHANNEL_C    0b00000100
 #define AY_CHANNEL_ALL  0b00000111
 
+
+
+////////////////////////////////////////////////////////
+//
+// ARKOS TRACKER 2
+//
+////////////////////////////////////////////////////////
+
+void cpct_akp2Init(void* songData);
+void cpct_akp2Play(void);
+void cpct_akp2Stop(void);
+void cpct_akp2InitSFX(void* sfxData);
+void cpct_akp2PlaySFX(u8 sfxID, u8 channel, u8 invertedVolume);
+
+
 #endif

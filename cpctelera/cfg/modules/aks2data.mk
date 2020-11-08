@@ -207,3 +207,288 @@ $(A2C_SH): $(1)
 IMGASMFILES := $(A2C_S2) $(IMGASMFILES)
 OBJS2CLEAN  := $(A2C_SH) $(OBJS2CLEAN)
 endef
+
+
+
+
+
+
+####################################################################
+#
+# ARKOS TRAKER 2
+#
+# Build rules for arkostraker 2 automation using AKM player
+#
+#
+# STEPS
+#
+# 1. Convert AKS files and player to assembly (This assembly isn't compatible
+#    with cpctelera's assembler)
+#
+# 2. Compile all assembly files to binary using rasm assembler.
+#
+# 3. Disassembly all binaries using disark to a cpctelera's compatible assembler
+#
+####################################################################
+
+INTERMEDIATE_FOLDER=obj/__aks2/
+INTERMEDIATE_FOLDER_FOLDER=obj/__aks2/.folder
+
+PLAYER           = PlayerAkm
+PLAYER_ASM       = $(PLAYER).asm
+PLAYER_BIN       = $(PLAYER).bin
+PLAYER_SYM       = $(PLAYER).sym
+PLAYER_S         = $(PLAYER).s
+PLAYER_SRC       = $(AT2PLAYERS_PATH)$(PLAYER_ASM)
+PLAYER_DST       = $(INTERMEDIATE_FOLDER)$(PLAYER_ASM)
+PLAYER_OUT       = $(INTERMEDIATE_FOLDER)$(PLAYER)
+PLAYER_OUT_BIN   = $(INTERMEDIATE_FOLDER)$(PLAYER_BIN)
+PLAYER_OUT_SYM   = $(INTERMEDIATE_FOLDER)$(PLAYER_SYM)
+PLAYER_HEAD_ASM  = $(INTERMEDIATE_FOLDER)PlayerHead.asm
+
+PLAYER_SFX       = PlayerAkm_SoundEffects
+PLAYER_SFX_ASM   = $(PLAYER_SFX).asm
+PLAYER_SFX_SRC   = $(AT2PLAYERS_PATH)$(PLAYER_SFX_ASM)
+PLAYER_SFX_DST   = $(INTERMEDIATE_FOLDER)$(PLAYER_SFX_ASM)
+
+PLAYER_C_BINDINGS_INIT = $(AT2PLAYERS_PATH)init_cbindings.s
+PLAYER_C_BINDINGS_PLAY = $(AT2PLAYERS_PATH)play_cbindings.s
+PLAYER_C_BINDINGS_STOP = $(AT2PLAYERS_PATH)stop_cbindings.s
+PLAYER_C_BINDINGS_INIT_SFX = $(AT2PLAYERS_PATH)initSFX_cbindings.s
+PLAYER_C_BINDINGS_PLAY_SFX = $(AT2PLAYERS_PATH)playSFX_cbindings.s
+
+#
+# Rule to generate the folder where intermediate files will be compiled
+#
+$(INTERMEDIATE_FOLDER_FOLDER):
+	mkdir -p $(INTERMEDIATE_FOLDER)
+	touch $(INTERMEDIATE_FOLDER_FOLDER)
+
+
+
+#################################################################
+#
+# Generates player rules
+#
+################################################################
+define AKS2_GEN_PLAYER
+$(eval PLAYER_OUT_S  := $(OUTFOLDER)$(PLAYER_S))
+
+#
+# Moves the player source file to the intermediate folder
+#
+$(PLAYER_DST): $(PLAYER_SRC) $(INTERMEDIATE_FOLDER_FOLDER)
+	cp $(PLAYER_SRC) $(PLAYER_DST)
+
+#
+# Moves the player sfx source file to the intermediate folder
+#
+$(PLAYER_SFX_DST): $(PLAYER_SFX_SRC) $(INTERMEDIATE_FOLDER_FOLDER)
+	cp $(PLAYER_SFX_SRC) $(PLAYER_SFX_DST)
+
+#
+# Generates the a file which includes player and player sfx files
+#
+$(PLAYER_HEAD_ASM): $(PLAYER_DST) $(PLAYER_SFX_DST)
+	touch $(PLAYER_HEAD_ASM)
+	echo ""                                                          > $(PLAYER_HEAD_ASM)
+	echo 'PLY_AKM_HARDWARE_CPC = 1'                                  >> $(PLAYER_HEAD_ASM)
+ifeq ($(MANAGE_SFX), 1)
+	echo 'PLY_AKM_MANAGE_SOUND_EFFECTS = 1'                          >> $(PLAYER_HEAD_ASM)
+endif
+	$(foreach CONF, $(SONG_PLAYER_CONFIGS), echo 'include "$(CONF)"' >> $(PLAYER_HEAD_ASM) ;)
+	$(foreach CONF, $(SFX_PLAYER_CONFIGS), echo 'include "$(CONF)"'  >> $(PLAYER_HEAD_ASM) ;)
+	echo 'include "$(PLAYER_ASM)"'                                   >> $(PLAYER_HEAD_ASM)
+
+#
+# Compiles the player to bin
+#
+$(PLAYER_OUT_BIN): $(PLAYER_HEAD_ASM) $(PLAYER_SFX_DST)
+	$(RASM) $(PLAYER_HEAD_ASM) -o $(PLAYER_OUT) -s -sl -sq
+
+#
+# Disassembly de player to cpctelera's compatible player
+#
+$(PLAYER_OUT_S): $(PLAYER_OUT_BIN)
+	$(DISARK) $(PLAYER_OUT_BIN) $(PLAYER_OUT_S) --symbolFile $(PLAYER_OUT_SYM) --sourceProfile sdcc
+	# Replaces the default tag for a cpctelera's style tag
+	# Adds C bindings
+ifeq ($(ADD_CBINDINGS), 1)
+		sed -i -e "/_PLY_AKM_INIT::/ {r $(PLAYER_C_BINDINGS_INIT)" -e 'N}' $(PLAYER_OUT_S)
+		sed -i -e "/_PLY_AKM_PLAY::/ {r $(PLAYER_C_BINDINGS_PLAY)" -e 'N}' $(PLAYER_OUT_S)
+		sed -i -e "/_PLY_AKM_STOP::/ {r $(PLAYER_C_BINDINGS_STOP)" -e 'N}' $(PLAYER_OUT_S)
+		sed -i -e "/_PLY_AKM_INITSOUNDEFFECTS::/ {r $(PLAYER_C_BINDINGS_INIT_SFX)" -e 'N}' $(PLAYER_OUT_S)
+		sed -i -e "/_PLY_AKM_PLAYSOUNDEFFECT::/ {r $(PLAYER_C_BINDINGS_PLAY_SFX)" -e 'N}' $(PLAYER_OUT_S)
+endif
+	sed -i "s/_PLY_AKM_INIT::/cpct_akp2Init_asm::/" $(PLAYER_OUT_S)
+	sed -i "s/_PLY_AKM_PLAY::/cpct_akp2Play_asm::/" $(PLAYER_OUT_S)
+	sed -i "s/_PLY_AKM_STOP::/cpct_akp2Stop_asm::/" $(PLAYER_OUT_S)
+	sed -i "s/_PLY_AKM_INITSOUNDEFFECTS::/cpct_akp2InitSFX_asm::/" $(PLAYER_OUT_S)
+	sed -i "s/_PLY_AKM_PLAYSOUNDEFFECT::/cpct_akp2PlaySFX_asm::/" $(PLAYER_OUT_S)
+
+#
+# Set files for make clean
+#
+$(eval IMGASMFILES         = $(IMGASMFILES) $(PLAYER_OUT_S))
+$(eval OBJS2CLEAN          = $(OBJS2CLEAN) $(PLAYER_OUT_S))
+
+endef
+
+
+
+
+
+
+#######################################################################
+#
+# Sets the folder where the final sources will be stored
+#
+# $(1) = Path to the folder
+#
+#######################################################################
+define AKS2_SET_FOLDER
+	OUTFOLDER = $(1)
+endef
+
+
+
+
+#######################################################################
+#
+# Enables c bindings on the player source
+#
+#######################################################################
+define AKS2_ADD_CBINDINGS
+	$(eval ADD_CBINDINGS = 1)
+endef
+
+
+
+
+#######################################################################
+#
+# Enables sound effects
+#
+#######################################################################
+define AKS2_MANAGE_SFX
+	$(eval MANAGE_SFX = 1)
+endef
+
+
+
+
+
+#######################################################################
+#
+# Converts an arkostraker 2 file in .aks format to a cpctelera's compilable
+# source
+#
+# $(1) = Path to the .aks file
+# $(2) = Name for the song
+# $(3) = Subsong
+#
+#######################################################################
+
+define AKS2_CONVERT_SONG
+
+$(eval SONG_AKS            = $(1))
+$(eval SONG                = $(2))
+$(eval SONG_UPPERCASE      = $(shell echo '$(SONG)' | tr '[:lower:]' '[:upper:]'))
+$(eval SUBSONG             = $(3))
+$(eval SONG_PLAYER_CONFIG  = $(SONG)_playerconfig.asm)
+$(eval SONG_ASM            = $(INTERMEDIATE_FOLDER)/$(SONG).asm)
+$(eval SONG_OUT            = $(INTERMEDIATE_FOLDER)/$(SONG))
+$(eval SONG_OUT_BIN        = $(SONG_OUT).bin)
+$(eval SONG_OUT_SYM        = $(SONG_OUT).sym)
+$(eval SONG_S              = $(OUTFOLDER)$(SONG).s)
+$(eval SONG_H              = $(OUTFOLDER)$(SONG).h)
+
+$(eval SUBSONGS = $(foreach SUBSONG, $(3),s$(SUBSONG)p1,))
+$(eval SUBSONGS = $(shell echo $(SUBSONGS) | tr -d ' '))
+
+#
+# Converts the .aks to asm
+#
+$(SONG_ASM):  $(SONG_AKS) $(INTERMEDIATE_FOLDER_FOLDER)
+	$(SONG2AKM) $(SONG_AKS) $(SONG_ASM) -sp $(SUBSONGS) --exportPlayerConfig --labelPrefix $(SONG)_
+
+
+# 
+# Compiles the .asm to binary
+#
+$(SONG_OUT_BIN): $(SONG_ASM)
+	$(RASM) $(SONG_ASM) -o $(SONG_OUT) -s -sl -sq
+
+#
+# Disassembles .bin to .s
+#
+$(SONG_S): $(SONG_OUT_BIN)
+	$(DISARK) $(SONG_OUT_BIN) $(SONG_S) --symbolFile $(SONG_OUT_SYM) --sourceProfile sdcc
+	# Replaces the default upercase tag by the original name
+	sed -i "s/$(SONG_UPPERCASE)_START::/$(SONG)::/" $(SONG_S)
+	echo "extern void $(SONG);" > $(SONG_H)
+
+$(eval SONG_PLAYER_CONFIGS  = $(SONG_PLAYER_CONFIGS) $(SONG_PLAYER_CONFIG))
+$(eval IMGASMFILES           = $(IMGASMFILES) $(SONG_S))
+$(eval OBJS2CLEAN           = $(OBJS2CLEAN) $(SONG_S) $(SONG_H))
+
+endef
+
+
+
+
+
+
+
+
+
+#######################################################################
+#
+# Converts an soundEffects arkostraker 2 file in .aks format to a cpctelera's
+# compilable source
+#
+# $(1) = Path to the .aks file
+# $(2) = Name for the soundEffects
+#
+#######################################################################
+
+define AKS2_CONVERT_SFX
+
+$(eval SFX_AKS            = $(1))
+$(eval SFX                = $(2))
+$(eval SFX_UPPERCASE      = $(shell echo '$(SFX)' | tr '[:lower:]' '[:upper:]'))
+$(eval SFX_PLAYER_CONFIG  = $(SFX)_playerconfig.asm)
+$(eval SFX_ASM            = $(INTERMEDIATE_FOLDER)/$(SFX).asm)
+$(eval SFX_OUT            = $(INTERMEDIATE_FOLDER)/$(SFX))
+$(eval SFX_OUT_BIN        = $(SFX_OUT).bin)
+$(eval SFX_OUT_SYM        = $(SFX_OUT).sym)
+$(eval SFX_S              = $(OUTFOLDER)$(SFX).s)
+$(eval SFX_H              = $(OUTFOLDER)$(SFX).h)
+
+#
+# Converts the .aks to asm
+#
+$(SFX_ASM): $(SFX_AKS) $(INTERMEDIATE_FOLDER_FOLDER)
+	$(SONG2SFX) $(SFX_AKS) $(SFX_ASM) --exportPlayerConfig --labelPrefix $(SFX)_
+
+# 
+# Compiles the .asm to binary
+#
+$(SFX_OUT_BIN): $(SFX_ASM)
+	$(RASM) $(SFX_ASM) -o $(SFX_OUT) -s -sl -sq
+
+#
+# Disassembles .bin to .s
+#
+$(SFX_S): $(SFX_OUT_BIN)
+	$(DISARK) $(SFX_OUT_BIN) $(SFX_S) --symbolFile $(SFX_OUT_SYM) --sourceProfile sdcc
+	# Replaces the default upercase tag by the original name
+	sed -i "s/$(SFX_UPPERCASE)_SOUNDEFFECTS::/$(SFX)::/" $(SFX_S)
+	echo "extern void $(SFX);" > $(SFX_H)
+
+$(eval SFX_PLAYER_CONFIGS  = $(SFX_PLAYER_CONFIGS) $(SFX_PLAYER_CONFIG))
+$(eval IMGASMFILES        := $(IMGASMFILES) $(SFX_S))
+$(eval OBJS2CLEAN         := $(OBJS2CLEAN) $(SFX_S) $(SFX_H))
+
+endef
+
